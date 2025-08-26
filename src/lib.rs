@@ -129,6 +129,7 @@ use flate2::Compression;
 use log::{LevelFilter, Metadata, Record};
 use std::fs::File;
 use std::io::{self, Read, Write};
+use std::sync::Mutex;
 use std::thread::JoinHandle;
 
 /// log macros
@@ -369,6 +370,25 @@ impl log::Log for Log2 {
     }
 }
 
+pub struct Log2Wrapper(Mutex<Option<Log2>>);
+
+impl log::Log for &Log2Wrapper {
+    fn enabled(&self, metadata: &Metadata) -> bool {
+        let mut lock = self.0.lock().unwrap();
+        lock.as_mut().unwrap().enabled(metadata)
+    }
+
+    fn flush(&self) {
+        let mut lock = self.0.lock().unwrap();
+        lock.as_mut().unwrap().flush();
+    }
+
+    fn log(&self, record: &Record) {
+        let mut lock = self.0.lock().unwrap();
+        lock.as_mut().unwrap().log(record);
+    }
+}
+
 impl Handle {
     pub fn stop(&mut self) {
         if let Some(thread) = self.thread.take() {
@@ -395,6 +415,9 @@ impl Handle {
             .append(true)
             .open(path)
             .expect("error to open file");
+
+        let mut log = LOGGER.0.lock().unwrap();
+        log.as_mut().unwrap().path = path.into();
 
         // redirect log file
         let _ = self.tx.send(Action::Redirect(path.into()));
@@ -600,6 +623,8 @@ pub fn open(path: &str) -> Log2 {
     logger
 }
 
+static LOGGER: Log2Wrapper = Log2Wrapper(Mutex::new(None));
+
 fn start_log2(mut logger: Log2) -> Handle {
     let rx = logger.rx.take().unwrap();
 
@@ -624,7 +649,9 @@ fn start_log2(mut logger: Log2) -> Handle {
 
     handle.thread = Some(thread);
 
-    log::set_boxed_logger(Box::new(logger)).expect("error to initialize log2");
+    *LOGGER.0.lock().unwrap() = Some(logger);
+
+    log::set_boxed_logger(Box::new(&LOGGER)).expect("error to initialize log2");
     log::set_max_level(LevelFilter::Trace);
 
     handle

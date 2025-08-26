@@ -1,10 +1,10 @@
 use log2::*;
 
 const PATH: &str = "tests/log2.txt";
-const REDIRECT: &str = "tests/redirect_log2.txt";
+const REDIRECT: &str = "tests/redirect_log.txt";
 
 #[test]
-fn redirect_log_file() {
+fn redirect_log_file_with_init_path() {
     let mut log2 = log2::open(PATH).module(true).tee(true).start();
 
     trace!("send order request to server");
